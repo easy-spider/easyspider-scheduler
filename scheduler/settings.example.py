@@ -1,5 +1,2 @@
-MYSQL_HOST = '127.0.0.1'
-MYSQL_PORT = 3306
-MYSQL_USER = 'user'
-MYSQL_PASSWORD = 'password'
-MYSQL_DATABASE = 'database'
+DJANGO_API = 'http://127.0.0.1:8000/easyspider/'
+MONGO_URL = 'mongodb://host'

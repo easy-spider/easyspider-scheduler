@@ -63,7 +63,7 @@ class Node:
             'spider': spider_name,
         }
         if setting is not None:
-            data['setting'] = setting
+            data['setting'] = setting.split(';')
         if job_id is not None:
             data['jobid'] = job_id
         if version is not None:
@@ -135,11 +135,17 @@ class Node:
         return response.json()
         # {"status": "ok"}
 
-    def add_job(self, project_name: str, spider_name: str, setting, job_id: str, arg):
-        dict_arg = json.load(arg)
+    def add_job(self, project_name: str, spider_name: str, setting, job_id: str, task_id: int, arg):
+        dict_arg = json.loads(arg)
+        if setting is None:
+            setting = ''
+        if setting != '':
+            setting += ';'
+        setting += f'MONGO_URL={MONGO_URL};SPIDER_NAME={spider_name};TASK_ID={task_id};JOB_ID={job_id}'
         r = self.schedule(project_name, spider_name, setting, job_id, None, dict_arg)
         status = r['status']
         if status != 'ok':
+            logging.error(r)
             raise Exception('node schedule failed')
 
     def cancel_job(self, project_name: str, job_id: str) -> JobStatus:
@@ -177,8 +183,8 @@ def pick_node(online_nodes) -> Node:
 
 
 class Job:
-    def __init__(self, job_id: str, project_name: str, spider_name: str, setting: str, arg: str, node_id: int,
-                 status: JobStatus, task_status: TaskStatus):
+    def __init__(self, job_id: str, project_name: str, spider_name: str, setting, arg: str, node_id: int,
+                 status: JobStatus, task_status: TaskStatus, task_id: int):
         self.job_id = job_id
         self.project_name = project_name
         self.spider_name = spider_name
@@ -187,6 +193,10 @@ class Job:
         self.node_id = node_id
         self.status = status
         self.task_status = task_status
+        self.task_id = task_id
+
+    def __repr__(self):
+        return f'[Job_{self.job_id}]'
 
     def update_status(self, status: JobStatus):
         update_job_status(self.job_id, status)
@@ -198,6 +208,7 @@ class Job:
 def poll_pending_or_running_jobs():
     jobs = fetch_job_by_status(JobStatus.PENDING)
     jobs += fetch_job_by_status(JobStatus.RUNNING)
+    logging.info(f'fetched pending or running jobs: {jobs}')
     projects = set()
     for job in jobs:
         projects.add(job.project_name)
@@ -227,99 +238,59 @@ def poll_pending_or_running_jobs():
 
 def poll_created_jobs():
     jobs = fetch_job_by_status(JobStatus.CREATED)
+    logging.info(f'fetched created jobs: {jobs}')
     for job in jobs:
-        if job.task_status is not TaskStatus.RUNNING or job.task_status is not TaskStatus.READY:
+        if job.task_status is not TaskStatus.RUNNING and job.task_status is not TaskStatus.READY:
+            logging.info(f'{job} task status {job.task_status} not ready or running')
             continue
         node = pick_node(fetch_online_nodes())
-        node.add_job(job.project_name, job.spider_name, job.setting, job.job_id, job.arg)
+        logging.info(f'pick {node} for job {job}')
+        node.add_job(job.project_name, job.spider_name, job.setting, job.job_id, job.task_id, job.arg)
         job.update_status(JobStatus.PENDING)
+        job.update_node(node.node_id)
 
 
 def fetch_node_by_id(node_id) -> Node:
-    conn = mysql.connector.connect(user=MYSQL_USER, password=MYSQL_PASSWORD,
-                                   host=MYSQL_HOST, port=MYSQL_PORT, database=MYSQL_DATABASE)
-    cursor = conn.cursor()
-    cursor.execute(f'SELECT id,ip,port,username,password,status FROM easyspider_node WHERE id=%s', (node_id))
-    node_id, server_ip, server_port, username, password, status = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    return Node(node_id, server_ip, server_port, username, password, status)
+    r = requests.get(f'{DJANGO_API}node/get/{node_id}/').json()
+    return Node(r['id'], r['ip'], r['port'], r['username'], r['password'], r['status'])
 
 
 def fetch_online_nodes():
     node_list = []
-    conn = mysql.connector.connect(user=MYSQL_USER, password=MYSQL_PASSWORD,
-                                   host=MYSQL_HOST, port=MYSQL_PORT, database=MYSQL_DATABASE)
-    cursor = conn.cursor()
-    cursor.execute(
-        f'SELECT id,ip,port,username,password,status FROM easyspider_node WHERE status={int(NodeStatus.ONLINE)}')
-    r = cursor.fetchall()
-    for node_id, server_ip, server_port, username, password, status in r:
-        node_list.append(Node(node_id, server_ip, server_port, username, password, status))
-    cursor.close()
-    conn.close()
-    logging.info(f'Fetched online nodes {node_list}')
+    nodes = requests.get(f'{DJANGO_API}node/list-online/').json()
+    for r in nodes:
+        node_list.append(Node(r['id'], r['ip'], r['port'], r['username'], r['password'], r['status']))
+    logging.info(f'fetched online nodes: {node_list}')
     return node_list
 
 
 def update_node_status(node_id: int, status: NodeStatus):
-    conn = mysql.connector.connect(user=MYSQL_USER, password=MYSQL_PASSWORD,
-                                   host=MYSQL_HOST, port=MYSQL_PORT, database=MYSQL_DATABASE)
-    cursor = conn.cursor()
-    cursor.execute('UPDATE easyspider_node SET status=%s WHERE id=%s', (int(status), node_id))
-    cursor.close()
-    conn.commit()
-    conn.close()
-    logging.info(f'Node_{node_id} status -> {status}')
+    r = requests.get(f'{DJANGO_API}node/set-status/{node_id}/{status}').json()
+    logging.info(f'[Node_{node_id}] status -> {status}: {r}')
 
 
 def fetch_job_by_status(status: JobStatus):
-    jobs = []
-    conn = mysql.connector.connect(user=MYSQL_USER, password=MYSQL_PASSWORD,
-                                   host=MYSQL_HOST, port=MYSQL_PORT, database=MYSQL_DATABASE)
-    cursor = conn.cursor()
-    cursor.execute(f"""
-        select
-           job.id as id,
-           site.project_name as project_name,
-           template.spider_name as spider_name,
-           site.settings as settings,
-           job.args as args,
-           job.node_id as node_id,
-           job.status as status,
-           task.status as task_status
-        from easyspider_job job
-        left join easyspider_node node on job.node_id = node.id
-        left join easyspider_task task on job.task_id = task.id
-        left join easyspider_template template on task.template_id = template.id
-        left join easyspider_sitetemplates site on template.site_templates_id = site.id
-        where job.status={int(status)} 
-    """)
-    r = cursor.fetchall()
-    for job_id, project, spider, setting, arg, node, status, ts in r:
-        jobs.append(Job(job_id, project, spider, setting, arg, node, status, TaskStatus(ts)))
-    cursor.close()
-    conn.close()
-    return jobs
+    job_list = []
+    jobs = requests.get(f'{DJANGO_API}job/list/{status}').json()
+    for r in jobs:
+        job_list.append(
+            Job(r['id'],
+                r['project_name'],
+                r['spider_name'],
+                r['settings'],
+                r['args'],
+                r['node_id'],
+                r['status'],
+                TaskStatus(r['task_status']),
+                r['task_id']))
+    return job_list
 
 
 def update_job_status(job_id: str, status: JobStatus):
-    conn = mysql.connector.connect(user=MYSQL_USER, password=MYSQL_PASSWORD,
-                                   host=MYSQL_HOST, port=MYSQL_PORT, database=MYSQL_DATABASE)
-    cursor = conn.cursor()
-    cursor.execute('UPDATE easyspider_job SET status=%s WHERE id=%s', (int(status), job_id))
-    cursor.close()
-    conn.commit()
-    conn.close()
-    logging.info(f'Node_{job_id} status -> {status}')
+    r = requests.get(f'{DJANGO_API}job/set-status/{job_id}/{status}').json()
+    logging.info(f'[job_{job_id}] status -> {status}: {r}')
 
 
 def update_job_node(job_id: str, node_id: int):
-    conn = mysql.connector.connect(user=MYSQL_USER, password=MYSQL_PASSWORD,
-                                   host=MYSQL_HOST, port=MYSQL_PORT, database=MYSQL_DATABASE)
-    cursor = conn.cursor()
-    cursor.execute('UPDATE easyspider_job SET node_id=%s WHERE id=%s', (node_id, job_id))
-    cursor.close()
-    conn.commit()
-    conn.close()
-    logging.info(f'Node_{job_id} node -> {node_id}')
+    r = requests.get(f'{DJANGO_API}job/set-node/{job_id}/{node_id}').json()
+    logging.info(f'[job_{job_id}] node -> {node_id}: {r}')
