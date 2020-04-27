@@ -2,10 +2,9 @@ import json
 import logging
 from enum import IntEnum, Enum
 
-import mysql.connector
 import requests
 
-from scheduler.settings import *
+from settings import *
 
 
 class JobStatus(IntEnum):

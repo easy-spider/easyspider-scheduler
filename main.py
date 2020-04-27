@@ -1,7 +1,6 @@
-import logging
 import time
 
-from scheduler.node import *
+from node import *
 
 if __name__ == '__main__':
     logging.basicConfig(

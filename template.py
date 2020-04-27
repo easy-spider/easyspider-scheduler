@@ -1,8 +1,4 @@
-import logging
-
-import requests
-
-from scheduler.node import *
+from node import *
 
 
 def add_template(project_name: str, egg_path: str, version: str):
