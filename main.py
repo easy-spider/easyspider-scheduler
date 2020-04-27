@@ -1,7 +1,6 @@
-import logging
 import time
 
-from scheduler.node import *
+from node import *
 
 if __name__ == '__main__':
     logging.basicConfig(
@@ -11,7 +10,7 @@ if __name__ == '__main__':
         try:
             nodes = fetch_online_nodes()
             for node in nodes:
-                logging.info(node.daemon_status())
+                logging.info(node.poll_status())
             poll_pending_or_running_jobs()
             poll_created_jobs()
         finally:

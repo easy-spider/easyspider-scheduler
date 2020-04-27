@@ -2,10 +2,9 @@ import json
 import logging
 from enum import IntEnum, Enum
 
-import mysql.connector
 import requests
 
-from scheduler.settings import *
+from settings import *
 
 
 class JobStatus(IntEnum):
@@ -45,9 +44,16 @@ class Node:
 
     def daemon_status(self):
         url = self.api_url_prefix() + 'daemonstatus.json'
-        response = requests.get(url, auth=(self.username, self.password))
+        response = requests.get(url, auth=(self.username, self.password), timeout=3)
         return response.json()
         # { "status": "ok", "running": "0", "pending": "0", "finished": "0", "node_name": "node-name" }
+
+    def poll_status(self):
+        try:
+            return self.daemon_status()
+        except requests.exceptions.RequestException as _e:
+            update_node_status(self.node_id, NodeStatus.OFFLINE)
+            return f'{self} no response'
 
     def add_version(self, project_name: str, project_version: str, egg_path: str):
         url = self.api_url_prefix() + 'addversion.json'
