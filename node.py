@@ -271,13 +271,13 @@ def fetch_online_nodes():
 
 
 def update_node_status(node_id: int, status: NodeStatus):
-    r = requests.get(f'{DJANGO_API}node/set-status/{node_id}/{status}').json()
-    logging.info(f'[Node_{node_id}] status -> {status}: {r}')
+    requests.get(f'{DJANGO_API}node/set-status/{node_id}/{status}/')
+    logging.info(f'[Node_{node_id}] status -> {status}')
 
 
 def fetch_job_by_status(status: JobStatus):
     job_list = []
-    jobs = requests.get(f'{DJANGO_API}job/list/{status}').json()
+    jobs = requests.get(f'{DJANGO_API}job/list/{status}/').json()
     for r in jobs:
         job_list.append(
             Job(r['id'],
@@ -293,10 +293,10 @@ def fetch_job_by_status(status: JobStatus):
 
 
 def update_job_status(job_id: str, status: JobStatus):
-    r = requests.get(f'{DJANGO_API}job/set-status/{job_id}/{status}').json()
-    logging.info(f'[job_{job_id}] status -> {status}: {r}')
+    requests.get(f'{DJANGO_API}job/set-status/{job_id}/{status}/')
+    logging.info(f'[job_{job_id}] status -> {status}')
 
 
 def update_job_node(job_id: str, node_id: int):
-    r = requests.get(f'{DJANGO_API}job/set-node/{job_id}/{node_id}').json()
-    logging.info(f'[job_{job_id}] node -> {node_id}: {r}')
+    requests.get(f'{DJANGO_API}job/set-node/{job_id}/{node_id}/')
+    logging.info(f'[job_{job_id}] node -> {node_id}')
