@@ -14,4 +14,4 @@ if __name__ == '__main__':
             poll_pending_or_running_jobs()
             poll_created_jobs()
         finally:
-            time.sleep(10)
+            time.sleep(5)
