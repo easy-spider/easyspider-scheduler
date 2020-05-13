@@ -245,7 +245,7 @@ def poll_pending_or_running_jobs():
 def poll_created_jobs():
     jobs = fetch_job_by_status(JobStatus.CREATED)
     logging.info(f'fetched created jobs: {jobs}')
-    for job in jobs:
+    for job in jobs[:10]:
         if job.task_status is not TaskStatus.RUNNING and job.task_status is not TaskStatus.READY:
             logging.info(f'{job} task status {job.task_status} not ready or running')
             continue
