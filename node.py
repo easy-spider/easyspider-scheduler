@@ -58,8 +58,10 @@ class Node:
     def add_version(self, project_name: str, project_version: str, egg_path: str):
         url = self.api_url_prefix() + 'addversion.json'
         data = {'project': project_name, 'version': project_version}
-        response = requests.post(url, files={'egg': open(egg_path, 'rb')}, data=data, auth=(
+        egg = open(egg_path, 'rb')
+        response = requests.post(url, files={'egg': egg}, data=data, auth=(
             self.username, self.password))
+        egg.close()
         return response.json()
         # {"status": "ok", "spiders": 3}
 
@@ -156,8 +158,6 @@ class Node:
 
     def cancel_job(self, project_name: str, job_id: str) -> JobStatus:
         r = self.cancel(project_name, job_id)
-        if r['status'] != 'ok':
-            raise Exception('cancel failed')
         status = r['prevstate']
         if status == 'running':
             return JobStatus.RUNNING
@@ -166,6 +166,7 @@ class Node:
         elif status == 'finished':
             return JobStatus.FINISHED
         else:
+            logging.error(r)
             raise Exception('unknown previous status')
 
 
